@@ -7,9 +7,10 @@
 //
 
 #include <iostream>
+#include "Hashbrown.h"
 
 int main(int argc, const char * argv[]) {
     // insert code here...
-    std::cout << "Hello, World!\n";
+    std::cout << mcd::hashbrown("A Test") << std::endl;
     return 0;
 }
