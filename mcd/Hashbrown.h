@@ -9,7 +9,7 @@
 #ifndef MCD_HASHBROWN_H
 #define MCD_HASHBROWN_H
 
-//#include <iostream> // only used for debugging
+#include <iostream> // only used for debugging
 #include <string>
 
 namespace mcd {

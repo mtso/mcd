@@ -30,7 +30,7 @@ const uint32_t STATE[5] = {  // initial 5 word constants
     0xC3D2E1F0
 };
 
-// Outputs binary representations of various datatypes for debugging
+//// Outputs binary representations of various datatypes for debugging
 //void printShort(const unsigned short& num)
 //{
 //    unsigned short local = num;
@@ -112,46 +112,13 @@ char toHex(unsigned char& ch) {
     }
 }
 
-string mcd::hashbrown(const string& input) {
-    //    string input = "A Test"; // Expected: 8f0c0855915633e4a7de19468b3874c8901df043
-    //    //    string input = "Adrian Marroquin";
-    //    //    string input = "The quick brown fox jumped over a lazy dog.";
-    
-    unsigned char chunk_ch[CHUNKCH_SIZE] = { 0 };
-    uint32_t chunk_l[CHUNKUL_SIZE] = { 0 };
+void loopChunkInto(uint32_t* state, uint32_t* chunk_in)
+{
     uint32_t chunk_xt[CHUNKXT_SIZE] = { 0 };
-    uint32_t state[5];
-    for (int i = 0; i < 5; i++) {
-        state[i] = STATE[i];
-    }
-    
-    // MARK: Step 4 & 5: Append input binary into chunk
-    for (int i = 0; i < input.length(); ++i) {
-        chunk_ch[i] = input[i];
-    }
-    chunk_ch[input.length()] = 1 << 7; // append 1 to end
-    
-    // MARK: 6.1: Append original message length
-    // Multiply string length by character bit size
-    uint64_t length_64 = (input.length() * 8);
-    // Mask off by character and shift bits left by 8
-    for (int i = 1; i <= 8; i++) {
-        chunk_ch[CHUNKCH_SIZE - i] = (length_64) & 0xFF;
-        length_64 >>= 8;
-    }
-    
-    // MARK: 8: Convert chunk of 64 char into 16 uint32 'words'
-    for (int i = 0; i < CHUNKUL_SIZE; i++) {
-        // Add chunk
-        for (int chi = 0; chi < 4; chi++) {
-            chunk_l[i] = chunk_l[i] | chunk_ch[i * 4 + chi];
-            chunk_l[i] <<= (chi < 3) ? 8 : 0;
-        }
-    }
     
     // MARK: 9: Put chunk 16 into transformation chunk of 80
     for (int i = 0; i < CHUNKUL_SIZE; i++) {
-        chunk_xt[i] = chunk_l[i];
+        chunk_xt[i] = chunk_in[i];
     }
     
     for (int i = 16; i < CHUNKXT_SIZE; i++) {
@@ -180,7 +147,7 @@ string mcd::hashbrown(const string& input) {
         
         // 11.1
         if (i >= 0 && i <= 19) {
-            f = (B & C) | (~B & D);
+            f = (B & C) | (~B & D); // Bit NOT is different from Bool NOT
             k = 0x5A827999;
         }
         else if (i >= 20 && i <= 39) {
@@ -211,8 +178,101 @@ string mcd::hashbrown(const string& input) {
     state[2] += C;
     state[3] += D;
     state[4] += E;
+}
+
+string mcd::hashbrown(const string& input) {
     
-    // Convert hash variables into hex string
+    // Initialize state variables from SHA-1's constants
+    uint32_t state[5];
+    for (int i = 0; i < 5; i++) {
+        state[i] = STATE[i];
+    }
+    
+    int length = (int)input.length(); // Cast the uint into an int
+    int chunk_count = length / 64 + 1;
+    int chunk_1bit = chunk_count - 1; // The chunk that the extra 1 bit needs to be put in
+    
+    // If (message length) % 64 is greater than 55 (448%512 bits),
+    // need to add another chunk for the 64 bits of message length
+    // binary that needs to be added to the last chunk.
+    if (length % 64 > 55) {
+        chunk_count += 1;
+    }
+    
+    // Allocate enough blocks for input length
+    unsigned char** chunks_ch = new unsigned char*[chunk_count];
+    uint32_t** chunks = new uint32_t*[chunk_count];
+
+    for (int i = 0; i < chunk_count; i++) {
+        // Blocks to catch the bits from the string input char-by-char
+        chunks_ch[i] = new unsigned char[CHUNKCH_SIZE];
+
+        // Blocks of uint32 'words' that will be used in the main loop
+        chunks[i] = new uint32_t[CHUNKUL_SIZE];
+    }
+    
+    // Zero blocks
+    for (int i = 0; i < chunk_count; ++i) {
+        for (int ch = 0; ch < CHUNKCH_SIZE; ch++) {
+            chunks_ch[i][ch] = 0;
+        }
+        for (int ul = 0; ul < CHUNKUL_SIZE; ul++) {
+            chunks[i][ul] = 0;
+        }
+    }
+    
+    // Append characters of input into char chunks
+    for (int chunkIndex = 0; chunkIndex < chunk_count; ++chunkIndex) {
+        for (int i = 0; i < CHUNKCH_SIZE && (i + chunkIndex * CHUNKCH_SIZE) < length; ++i) {
+            chunks_ch[chunkIndex][i] =input[chunkIndex * CHUNKCH_SIZE + i];
+        }
+    }
+    
+    // Append 1 bit after the input bits
+    chunks_ch[chunk_1bit][length % 64] = 1 << 7;
+    
+    // MARK: 6.1: Append original input length
+    // Multiply string length by character bit size
+    uint64_t length_64 = (input.length() * 8);
+    // Mask off by character and shift bits left by 8
+    for (int i = 1; i <= 8; i++) {
+        chunks_ch[chunk_count - 1][CHUNKCH_SIZE - i] = (length_64) & 0xFF;
+        length_64 >>= 8;
+    }
+    
+    // For each uint32 chunk
+    for (int i = 0; i < chunk_count; ++i) {
+        // Convert 64char chunk into uint32 words
+        for (int ui = 0; ui < CHUNKUL_SIZE; ++ui) {
+            for (int ch = 0; ch < 4; ++ch) {
+                // Bit OR combine the 8 bit char into the 32 bit uint
+                chunks[i][ui] = chunks[i][ui] | chunks_ch[i][ui * 4 + ch];
+                // Bitshift 8 to the left if not on the last iteration
+                chunks[i][ui] <<= (ch < 3) ? 8 : 0;
+            }
+        }
+    }
+    
+    // De-allocate the character blocks
+    for (int i = 0; i < chunk_count; ++i) {
+        delete[] chunks_ch[i];
+    }
+    delete[] chunks_ch;
+    chunks_ch = nullptr;
+    
+    // Hash each chunk and then add it to the state
+    for (int i = 0; i < chunk_count; ++i) {
+        loopChunkInto(state, chunks[i]);
+    }
+    
+    // De-allocate the character blocks
+    for (int i = 0; i < chunk_count; ++i) {
+        delete[] chunks[i];
+    }
+    delete[] chunks;
+    chunks = nullptr;
+    
+    // Convert the hash's state variables into hex string
     string hash = "";
     uint32_t currState;
     for (int stateIndex = 0; stateIndex < 5; stateIndex++) {

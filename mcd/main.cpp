@@ -11,6 +11,9 @@
 
 int main(int argc, const char * argv[]) {
     // insert code here...
-    std::cout << mcd::hashbrown("A Test") << std::endl;
+//    std::cout << "Hash of \"A Test\":\n"<< mcd::hashbrown("A Test") << std::endl;
+    
+    std::string input = "F12345678901234567890123456789012345678901234567890thequickbrownfox";
+    std::cout << mcd::hashbrown(input) << std::endl;
     return 0;
 }
